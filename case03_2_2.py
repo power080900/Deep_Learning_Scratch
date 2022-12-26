@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pylab as plt
-from lib.util import sigmoid
-from lib.util import step_function
+from dataset.util import sigmoid
+from dataset.util import step_function
 
 x = np.arange(-5.0, 5.0, 0.1)
 y = step_function(x)
