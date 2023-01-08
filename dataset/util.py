@@ -1,5 +1,5 @@
-import numpy as np
 from dataset.mnist import load_mnist
+import numpy as np
 import sys, os
 sys.path.append(os.pardir)
 import pickle
@@ -88,6 +88,7 @@ def numerical_gradient(f, x):
     grad = np.zeros_like(x)
     
     for idx in range(x.size):
+        print(idx)
         tmp_val = x[idx]
         x[idx] = tmp_val + h
         fxh1 = f(x)
@@ -95,7 +96,44 @@ def numerical_gradient(f, x):
         x[idx] = tmp_val - h
         fxh2 = f(x)
 
-        grad[idx] = (fxh1 - fxh2) / (2 *h)
+        grad[idx] = (fxh1 - fxh2) / (2 * h)
         x[idx] = tmp_val
 
     return grad
+
+class TwoLauyerNet:
+    def __init__(self, input_size, hidden_size, output_size, weiht_init_std = 0.01):
+        self.params = {}
+        self.params['W1'] = weiht_init_std * np.random.randn(input_size, hidden_size)
+        self.params['b1'] = np.zeros(hidden_size)
+        self.params['W2'] = weiht_init_std * np.random.randn(hidden_size, output_size)
+        self.params['b2'] = np.zeros(output_size)
+
+    def predict(self, x):
+        W1, W2 = self.params['W1'], self.params['W2']
+        b1, b2 = self.params['b1'], self.params['b2']
+
+        a1 = np.dot(x,W1) + b1
+        z1 = sigmoid(a1)
+        a2 = np.dot(z1,W2) + b2
+        y = softmax(a2)
+
+        return y
+
+    def loss(self, x, t):
+        y = self.predict(x)
+        y = np.argmax(y, axis=1)
+        t = np.argmax(t, axis=1)
+
+        accuracy = np.sum(y == t) / float(x.shape[0])
+        return accuracy
+
+    def numerical_gradient2(self, x, t):
+        loss_W = lambda W: self.loss(x, t)
+        grads = {}
+        grads['W1'] = numerical_gradient(loss_W, self.params['W1'])
+        grads['b1'] = numerical_gradient(loss_W, self.params['b1'])
+        grads['W2'] = numerical_gradient(loss_W, self.params['W2'])
+        grads['b2'] = numerical_gradient(loss_W, self.params['b2'])
+
+        return grads
