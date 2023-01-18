@@ -81,14 +81,30 @@ def cross_entropy_error(y,t):
         y = y.reshape(1, y.size)
     
     batch_size = y.shape[0]
-    return -np.sum(np.log(y[np.arange(batch_size),t] + 1e-7)) / batch_size
+    return -np.sum(t*np.log(y + 1e-7)) / batch_size
 
-def numerical_gradient(f, x):
+class simplenet:
+    def __init__(self):
+        self.W = np.random.randn(2,3)
+        
+    def predict(self, x):
+        return np.dot(x, self.W)
+    
+    def loss(self, x, t):
+        z = self.predict(x)
+        y = softmax(z)
+        loss = cross_entropy_error(y, t)
+        
+        return loss
+
+def f(x):
+    return simplenet.loss(x,t) 
+
+def numerical_gradient_1d(f, x):
     h = 1e-4
     grad = np.zeros_like(x)
     
     for idx in range(x.size):
-        print(idx)
         tmp_val = x[idx]
         x[idx] = tmp_val + h
         fxh1 = f(x)
@@ -99,6 +115,26 @@ def numerical_gradient(f, x):
         grad[idx] = (fxh1 - fxh2) / (2 * h)
         x[idx] = tmp_val
 
+    return grad
+
+def numerical_gradient(f,x):
+    h = 1e-4
+    grad = np.zeros_like(x)
+    
+    it = np.nditer(x, flags=['multi_index'], op_flags = ['readwrite'])
+    while not it.finished:
+        idx = it.multi_index
+        tmp_val = x[idx]
+        x[idx] = tmp_val + h
+        fxh1 = f(x)
+
+        x[idx] = tmp_val - h
+        fxh2 = f(x)
+
+        grad[idx] = (fxh1 - fxh2) / (2 * h)
+        x[idx] = tmp_val
+        it.iternext()
+        
     return grad
 
 class TwoLauyerNet:
@@ -122,13 +158,19 @@ class TwoLauyerNet:
 
     def loss(self, x, t):
         y = self.predict(x)
+        
+        return cross_entropy_error(y,t)
+
+    def accuracy(self, x, t):
+        y = self.predict(x)
         y = np.argmax(y, axis=1)
         t = np.argmax(t, axis=1)
 
         accuracy = np.sum(y == t) / float(x.shape[0])
+        
         return accuracy
-
-    def numerical_gradient2(self, x, t):
+        
+    def numerical_gradient(self, x, t):
         loss_W = lambda W: self.loss(x, t)
         grads = {}
         grads['W1'] = numerical_gradient(loss_W, self.params['W1'])
