@@ -3,6 +3,7 @@ import numpy as np
 import sys, os
 sys.path.append(os.pardir)
 import pickle
+from collections import OrderedDict
 
 # def sigmoid(x):
 #     return 1 / (1 + np.exp(-x))
@@ -21,7 +22,7 @@ class Relu:
         
         return out
     
-    def backward(self, dount):
+    def backward(self, dout):
         dout[self.mask] = 0
         dx = dout
         
@@ -38,6 +39,27 @@ class Sigmoid:
     
     def backward(self, dout):
         dx = dout * (1.0 - self.out) * self.out
+        
+        return dx
+    
+class Affine:
+    def __init__(self, W, b):
+        self.W = W
+        self.b = b
+        self.x = None
+        self.dW = None
+        self.db = None
+        
+    def forward(self, x):
+        self.x = x
+        out = np.dot(x, self.W) + self.b
+        
+        return out
+    
+    def backward(self, dout):
+        dx = np.dot(dout, self.W.T)
+        self.dW = np.dot(self.x.T, dout)
+        self.db = np.sum(dout, axis = 0)
         
         return dx
 
@@ -114,6 +136,25 @@ def cross_entropy_error(y,t):
     batch_size = y.shape[0]
     return -np.sum(t*np.log(y + 1e-7)) / batch_size
 
+class SoftmaxWithLoss:
+    def __init__(self):
+        self.loss = None
+        self.y = None
+        self.t = None
+        
+    def forward(self, x, t):
+        self.t = t
+        self.y = softmax(x)
+        self.loss = cross_entropy_error(self.y, self.t)
+        
+        return self.loss
+    
+    def backward(self, dout=1):
+        batch_size = self.t.shape[0]
+        dx = (self.y - self.t) / batch_size
+        
+        return dx
+
 class simplenet:
     def __init__(self):
         self.W = np.random.randn(2,3)
@@ -168,34 +209,43 @@ def numerical_gradient(f,x):
         
     return grad
 
-class TwoLauyerNet:
+class TwoLayerNet:
     def __init__(self, input_size, hidden_size, output_size, weiht_init_std = 0.01):
         self.params = {}
         self.params['W1'] = weiht_init_std * np.random.randn(input_size, hidden_size)
         self.params['b1'] = np.zeros(hidden_size)
         self.params['W2'] = weiht_init_std * np.random.randn(hidden_size, output_size)
         self.params['b2'] = np.zeros(output_size)
+        
+        self.layers = OrderedDict()
+        
+        self.layers['Affine1'] = Affine(self.params['W1'], self.params['b1'])
+        self.layers['Relu1'] = Relu()
+        self.layers['Affine2'] = Affine(self.params['W2'], self.params['b2'])
+        
+        self.lastLayer = SoftmaxWithLoss()
 
     def predict(self, x):
-        W1, W2 = self.params['W1'], self.params['W2']
-        b1, b2 = self.params['b1'], self.params['b2']
+        for layer in self.layers.values():
+            x = layer.forward(x)
+#         W1, W2 = self.params['W1'], self.params['W2']
+#         b1, b2 = self.params['b1'], self.params['b2']
 
-        a1 = np.dot(x,W1) + b1
-        z1 = sigmoid(a1)
-        a2 = np.dot(z1,W2) + b2
-        y = softmax(a2)
-
-        return y
+#         a1 = np.dot(x,W1) + b1
+#         z1 = sigmoid(a1)
+#         a2 = np.dot(z1,W2) + b2
+#         y = softmax(a2)
+        return x
 
     def loss(self, x, t):
         y = self.predict(x)
-        
-        return cross_entropy_error(y,t)
+        return self.lastLayer.forward(y,t)
+        # return cross_entropy_error(y,t)
 
     def accuracy(self, x, t):
         y = self.predict(x)
         y = np.argmax(y, axis=1)
-        t = np.argmax(t, axis=1)
+        if t.ndim != 1 : t = np.argmax(t, axis=1)
 
         accuracy = np.sum(y == t) / float(x.shape[0])
         
@@ -203,6 +253,7 @@ class TwoLauyerNet:
         
     def numerical_gradient(self, x, t):
         loss_W = lambda W: self.loss(x, t)
+        
         grads = {}
         grads['W1'] = numerical_gradient(loss_W, self.params['W1'])
         grads['b1'] = numerical_gradient(loss_W, self.params['b1'])
@@ -210,3 +261,62 @@ class TwoLauyerNet:
         grads['b2'] = numerical_gradient(loss_W, self.params['b2'])
 
         return grads
+
+    def gradient(self, x, t):
+        self.loss(x,t)
+        
+        dout = 1
+        dout = self.lastLayer.backward(dout)
+        
+        layers = list(self.layers.values())
+        layers.reverse()
+        for layer in layers:
+            dout = layer.backward(dout)
+            
+        grads = {}
+        grads['W1'] = self.layers['Affine1'].dW
+        grads['b1'] = self.layers['Affine1'].db
+        grads['W2'] = self.layers['Affine2'].dW
+        grads['b2'] = self.layers['Affine2'].db
+
+        return grads
+
+class SGD:
+    def __init__(self, lr = 0.01):
+        self.lr = lr
+        
+    def update(self, params, grads):
+        for key in params.keys():
+            params[key] -= self.lr * grads[key]
+            
+class Momentum:
+    def __init__(self, lr = 0.01, momentum = 0.9):
+        self.lr = lr
+        self.momentum = momentum
+        self.v = None
+        
+    def update(self, params, grads):
+        if self.v is None:
+            self.v = {}
+            for key, val in params.items():
+                self.v[key] = np.zeors_like(val)
+                
+        for key in params.keys():
+            self.v[key] = self.momentum * self.v[key] - self.lr * grads[key]
+            params[key] += self.v[key]
+            
+class AdaGrad:
+    def __init__(slef, lr=0.01):
+        self.lr = lr
+        self.h = None
+        
+    def update(self, params, grads):
+        if self.h is None:
+            self.h = {}
+            for key, val in params.items():
+                self.h[key] = np.zeors_like(val)
+        
+        for key in params.keys():
+            self.h[key] += grads[key] * grads[key]
+            params[key] -= self.lr * grads[key] / (np.sprt(self.h[key]) + 1e-7)
+
